@@ -1,0 +1,1135 @@
+{
+  "info": {
+    "name": "BokaPOS API",
+    "description": "BokaPOS fiscalization API for Serbia (approved ESIR). Contract version 1.0.0. Documentation: https://bokapos.rs/en/api",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "oauth2",
+    "oauth2": [
+      {
+        "key": "grant_type",
+        "value": "client_credentials",
+        "type": "string"
+      },
+      {
+        "key": "accessTokenUrl",
+        "value": "{{tokenUrl}}",
+        "type": "string"
+      },
+      {
+        "key": "clientId",
+        "value": "{{clientId}}",
+        "type": "string"
+      },
+      {
+        "key": "clientSecret",
+        "value": "{{clientSecret}}",
+        "type": "string"
+      },
+      {
+        "key": "client_authentication",
+        "value": "body",
+        "type": "string"
+      },
+      {
+        "key": "addTokenTo",
+        "value": "header",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://api.bokapos.rs"
+    },
+    {
+      "key": "tokenUrl",
+      "value": "https://auth.bokapos.rs/realms/boka/protocol/openid-connect/token"
+    },
+    {
+      "key": "clientId",
+      "value": ""
+    },
+    {
+      "key": "clientSecret",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Fiscal documents",
+      "item": [
+        {
+          "name": "Search the journal",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/fiscal-documents?businessPremiseId=b7d4e2c1-9a3f-4c8e-8f21-6e5a0c9d3b22&status=FISCALIZED&createdFrom=2026-09-01T00%3A00%3A00Z&pageSize=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "fiscal-documents"
+              ],
+              "query": [
+                {
+                  "key": "businessPremiseId",
+                  "value": "b7d4e2c1-9a3f-4c8e-8f21-6e5a0c9d3b22"
+                },
+                {
+                  "key": "status",
+                  "value": "FISCALIZED"
+                },
+                {
+                  "key": "createdFrom",
+                  "value": "2026-09-01T00:00:00Z"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Search the tenant electronic journal with stable keyset pagination\n\nhttps://bokapos.rs/en/api/referenca/fiskalni-dokumenti#listFiscalDocuments"
+          }
+        },
+        {
+          "name": "Issue a Normal Sale receipt",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "order-4127-sale-1"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/fiscal-documents",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "fiscal-documents"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"taxpayerId\": \"3f9c2a8e-6b1d-4e5a-9c47-1d2b8e6f0a11\",\n  \"businessPremiseId\": \"b7d4e2c1-9a3f-4c8e-8f21-6e5a0c9d3b22\",\n  \"clientReference\": \"ORDER-4127\",\n  \"invoiceType\": \"NORMAL\",\n  \"transactionType\": \"SALE\",\n  \"cashier\": {\n    \"id\": \"web-shop\",\n    \"displayName\": \"Web shop\"\n  },\n  \"items\": [\n    {\n      \"name\": \"Bluetooth slušalice\",\n      \"unitOfMeasure\": \"kom\",\n      \"quantity\": 1,\n      \"unitPrice\": 8990,\n      \"gtin\": \"8606012345678\",\n      \"taxLabels\": [\n        \"F\"\n      ]\n    }\n  ],\n  \"payments\": [\n    {\n      \"type\": \"CARD\",\n      \"amount\": 8990\n    }\n  ],\n  \"metadata\": {\n    \"orderId\": \"4127\",\n    \"channel\": \"web\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Fiscalize a document synchronously\n\nhttps://bokapos.rs/en/api/referenca/fiskalni-dokumenti#createFiscalDocument"
+          }
+        },
+        {
+          "name": "Export the journal (CSV)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/fiscal-documents/export?businessPremiseId=b7d4e2c1-9a3f-4c8e-8f21-6e5a0c9d3b22&createdFrom=2026-09-01T00%3A00%3A00Z&createdTo=2026-10-01T00%3A00%3A00Z",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "fiscal-documents",
+                "export"
+              ],
+              "query": [
+                {
+                  "key": "businessPremiseId",
+                  "value": "b7d4e2c1-9a3f-4c8e-8f21-6e5a0c9d3b22"
+                },
+                {
+                  "key": "createdFrom",
+                  "value": "2026-09-01T00:00:00Z"
+                },
+                {
+                  "key": "createdTo",
+                  "value": "2026-10-01T00:00:00Z"
+                }
+              ]
+            },
+            "description": "Export the filtered tenant electronic journal as bounded deterministic CSV\n\nhttps://bokapos.rs/en/api/referenca/fiskalni-dokumenti#exportFiscalDocuments"
+          }
+        },
+        {
+          "name": "Turnover report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/fiscal-documents/turnover-report?taxpayerId=3f9c2a8e-6b1d-4e5a-9c47-1d2b8e6f0a11&businessPremiseId=b7d4e2c1-9a3f-4c8e-8f21-6e5a0c9d3b22&pfrFrom=2026-09-01T00%3A00%3A00%2B02%3A00&pfrTo=2026-09-02T00%3A00%3A00%2B02%3A00",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "fiscal-documents",
+                "turnover-report"
+              ],
+              "query": [
+                {
+                  "key": "taxpayerId",
+                  "value": "3f9c2a8e-6b1d-4e5a-9c47-1d2b8e6f0a11"
+                },
+                {
+                  "key": "businessPremiseId",
+                  "value": "b7d4e2c1-9a3f-4c8e-8f21-6e5a0c9d3b22"
+                },
+                {
+                  "key": "pfrFrom",
+                  "value": "2026-09-01T00:00:00+02:00"
+                },
+                {
+                  "key": "pfrTo",
+                  "value": "2026-09-02T00:00:00+02:00"
+                }
+              ]
+            },
+            "description": "Report immutable Normal and Advance turnover for a selected PFR-time period\n\nhttps://bokapos.rs/en/api/referenca/fiskalni-dokumenti#getTurnoverReport"
+          }
+        },
+        {
+          "name": "Export the turnover report (CSV)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/fiscal-documents/turnover-report/export?taxpayerId=3f9c2a8e-6b1d-4e5a-9c47-1d2b8e6f0a11&businessPremiseId=b7d4e2c1-9a3f-4c8e-8f21-6e5a0c9d3b22&pfrFrom=2026-09-01T00%3A00%3A00%2B02%3A00&pfrTo=2026-09-02T00%3A00%3A00%2B02%3A00",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "fiscal-documents",
+                "turnover-report",
+                "export"
+              ],
+              "query": [
+                {
+                  "key": "taxpayerId",
+                  "value": "3f9c2a8e-6b1d-4e5a-9c47-1d2b8e6f0a11"
+                },
+                {
+                  "key": "businessPremiseId",
+                  "value": "b7d4e2c1-9a3f-4c8e-8f21-6e5a0c9d3b22"
+                },
+                {
+                  "key": "pfrFrom",
+                  "value": "2026-09-01T00:00:00+02:00"
+                },
+                {
+                  "key": "pfrTo",
+                  "value": "2026-09-02T00:00:00+02:00"
+                }
+              ]
+            },
+            "description": "Export the immutable local turnover report as deterministic CSV\n\nhttps://bokapos.rs/en/api/referenca/fiskalni-dokumenti#exportTurnoverReport"
+          }
+        },
+        {
+          "name": "Read a document",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/fiscal-documents/9f8e7d6c-5b4a-4321-8765-0fedcba98761",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "fiscal-documents",
+                "9f8e7d6c-5b4a-4321-8765-0fedcba98761"
+              ]
+            },
+            "description": "Retrieve one fiscal document\n\nhttps://bokapos.rs/en/api/referenca/fiskalni-dokumenti#getFiscalDocument"
+          }
+        },
+        {
+          "name": "Issue a copy",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "order-4127-copy-1"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/fiscal-documents/9f8e7d6c-5b4a-4321-8765-0fedcba98761/copies",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "fiscal-documents",
+                "9f8e7d6c-5b4a-4321-8765-0fedcba98761",
+                "copies"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cashier\": {\n    \"id\": \"web-shop\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Issue an official Копија of a fiscalized document\n\nhttps://bokapos.rs/en/api/referenca/fiskalni-dokumenti#createFiscalDocumentCopy"
+          }
+        },
+        {
+          "name": "Fetch a receipt representation",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/fiscal-documents/9f8e7d6c-5b4a-4321-8765-0fedcba98761/representations/pdf-a4",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "fiscal-documents",
+                "9f8e7d6c-5b4a-4321-8765-0fedcba98761",
+                "representations",
+                "pdf-a4"
+              ]
+            },
+            "description": "Retrieve one deterministic representation of a fiscalized receipt\n\nhttps://bokapos.rs/en/api/referenca/fiskalni-dokumenti#getFiscalDocumentRepresentation"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Refunds",
+      "item": [
+        {
+          "name": "Refund a receipt",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "order-4127-refund-1"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/refund-workflows",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "refund-workflows"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"taxpayerId\": \"3f9c2a8e-6b1d-4e5a-9c47-1d2b8e6f0a11\",\n  \"businessPremiseId\": \"b7d4e2c1-9a3f-4c8e-8f21-6e5a0c9d3b22\",\n  \"clientReference\": \"ORDER-4127-R1\",\n  \"original\": {\n    \"source\": \"BOKA\",\n    \"fiscalDocumentId\": \"9f8e7d6c-5b4a-4321-8765-0fedcba98761\"\n  },\n  \"cashier\": {\n    \"id\": \"web-shop\"\n  },\n  \"buyer\": {\n    \"id\": \"20:001234567\"\n  },\n  \"items\": [\n    {\n      \"originalLineIndex\": 0,\n      \"name\": \"Bluetooth slušalice\",\n      \"unitOfMeasure\": \"kom\",\n      \"quantity\": 1,\n      \"unitPrice\": 8990,\n      \"gtin\": \"8606012345678\",\n      \"taxLabels\": [\n        \"F\"\n      ]\n    }\n  ],\n  \"payments\": [\n    {\n      \"type\": \"CARD\",\n      \"amount\": 8990\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Refund an explicitly identified Normal Sale\n\nhttps://bokapos.rs/en/api/referenca/refundacije#createRefundWorkflow"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Advances",
+      "item": [
+        {
+          "name": "List advance cases",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/advance-cases?businessPremiseId=b7d4e2c1-9a3f-4c8e-8f21-6e5a0c9d3b22&state=OPEN&search=ORDER-5001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "advance-cases"
+              ],
+              "query": [
+                {
+                  "key": "businessPremiseId",
+                  "value": "b7d4e2c1-9a3f-4c8e-8f21-6e5a0c9d3b22"
+                },
+                {
+                  "key": "state",
+                  "value": "OPEN"
+                },
+                {
+                  "key": "search",
+                  "value": "ORDER-5001"
+                }
+              ]
+            },
+            "description": "List advance chains for operator selection\n\nhttps://bokapos.rs/en/api/referenca/avansi#listAdvanceCases"
+          }
+        },
+        {
+          "name": "Open an advance case",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "order-5001-advance-case"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/advance-cases",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "advance-cases"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"taxpayerId\": \"3f9c2a8e-6b1d-4e5a-9c47-1d2b8e6f0a11\",\n  \"businessPremiseId\": \"b7d4e2c1-9a3f-4c8e-8f21-6e5a0c9d3b22\",\n  \"clientReference\": \"ORDER-5001\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Create a server-managed advance chain\n\nhttps://bokapos.rs/en/api/referenca/avansi#createAdvanceCase"
+          }
+        },
+        {
+          "name": "Read an advance case",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/advance-cases/c4d5e6f7-a8b9-4c0d-9e1f-2a3b4c5d6e7f",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "advance-cases",
+                "c4d5e6f7-a8b9-4c0d-9e1f-2a3b4c5d6e7f"
+              ]
+            },
+            "description": "Retrieve an advance chain and recovery state\n\nhttps://bokapos.rs/en/api/referenca/avansi#getAdvanceCase"
+          }
+        },
+        {
+          "name": "Cancel the latest advance",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "order-5001-advance-1-cancel"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/advance-cases/c4d5e6f7-a8b9-4c0d-9e1f-2a3b4c5d6e7f/cancellations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "advance-cases",
+                "c4d5e6f7-a8b9-4c0d-9e1f-2a3b4c5d6e7f",
+                "cancellations"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cashier\": {\n    \"id\": \"web-shop\"\n  },\n  \"advanceSaleFiscalDocumentId\": \"d5e6f7a8-b9c0-4d1e-8f2a-3b4c5d6e7f80\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Cancel the latest erroneous Advance Sale with a standalone Advance Refund\n\nhttps://bokapos.rs/en/api/referenca/avansi#cancelAdvanceSale"
+          }
+        },
+        {
+          "name": "Close an advance case",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "order-5001-close"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/advance-cases/c4d5e6f7-a8b9-4c0d-9e1f-2a3b4c5d6e7f/close",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "advance-cases",
+                "c4d5e6f7-a8b9-4c0d-9e1f-2a3b4c5d6e7f",
+                "close"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cashier\": {\n    \"id\": \"web-shop\"\n  },\n  \"finalItems\": [\n    {\n      \"name\": \"Bluetooth slušalice\",\n      \"unitOfMeasure\": \"kom\",\n      \"quantity\": 1,\n      \"unitPrice\": 8990,\n      \"gtin\": \"8606012345678\",\n      \"taxLabels\": [\n        \"F\"\n      ]\n    }\n  ],\n  \"remainingPayments\": [\n    {\n      \"type\": \"CARD\",\n      \"amount\": 5990\n    }\n  ],\n  \"commercialFooter\": \"Hvala na kupovini.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Issue the Advance Refund and final Normal Sale\n\nhttps://bokapos.rs/en/api/referenca/avansi#closeAdvanceCase"
+          }
+        },
+        {
+          "name": "Fiscalize an advance payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "order-5001-advance-1"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/advance-cases/c4d5e6f7-a8b9-4c0d-9e1f-2a3b4c5d6e7f/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "advance-cases",
+                "c4d5e6f7-a8b9-4c0d-9e1f-2a3b4c5d6e7f",
+                "payments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cashier\": {\n    \"id\": \"web-shop\"\n  },\n  \"items\": [\n    {\n      \"name\": \"10: Аванс (F)\",\n      \"quantity\": 1,\n      \"unitPrice\": 3000,\n      \"taxLabels\": [\n        \"F\"\n      ]\n    }\n  ],\n  \"payments\": [\n    {\n      \"type\": \"WIRE_TRANSFER\",\n      \"amount\": 3000\n    }\n  ],\n  \"paymentOccurredAt\": \"2026-09-02T11:30:00+02:00\",\n  \"commercialFooter\": \"Avans za porudžbinu ORDER-5001. Isporuka po uplati ostatka.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Fiscalize the next Advance Sale in a chain\n\nhttps://bokapos.rs/en/api/referenca/avansi#fiscalizeAdvancePayment"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Proforma and Training",
+      "item": [
+        {
+          "name": "Issue a Proforma or Training document",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "quote-2210-proforma-1"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/proforma-training-workflows",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "proforma-training-workflows"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"taxpayerId\": \"3f9c2a8e-6b1d-4e5a-9c47-1d2b8e6f0a11\",\n  \"businessPremiseId\": \"b7d4e2c1-9a3f-4c8e-8f21-6e5a0c9d3b22\",\n  \"clientReference\": \"QUOTE-2210\",\n  \"invoiceType\": \"PROFORMA\",\n  \"transactionType\": \"SALE\",\n  \"cashier\": {\n    \"id\": \"web-shop\"\n  },\n  \"buyer\": {\n    \"id\": \"10:106952811\"\n  },\n  \"items\": [\n    {\n      \"name\": \"Bluetooth slušalice\",\n      \"unitOfMeasure\": \"kom\",\n      \"quantity\": 1,\n      \"unitPrice\": 8990,\n      \"gtin\": \"8606012345678\",\n      \"taxLabels\": [\n        \"F\"\n      ]\n    }\n  ],\n  \"payments\": [\n    {\n      \"type\": \"WIRE_TRANSFER\",\n      \"amount\": 8990\n    }\n  ],\n  \"commercialFooter\": \"Ponuda važi 7 dana.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Issue one bounded Proforma or Training document\n\nhttps://bokapos.rs/en/api/referenca/predracun-i-obuka#createProformaTrainingWorkflow"
+          }
+        },
+        {
+          "name": "Read a Proforma or Training workflow",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/proforma-training-workflows/0a1b2c3d-4e5f-4a6b-8c7d-8e9f0a1b2c3d",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "proforma-training-workflows",
+                "0a1b2c3d-4e5f-4a6b-8c7d-8e9f0a1b2c3d"
+              ]
+            },
+            "description": "Read a persisted Proforma or Training workflow\n\nhttps://bokapos.rs/en/api/referenca/predracun-i-obuka#getProformaTrainingWorkflow"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Receipt delivery by e-mail",
+      "item": [
+        {
+          "name": "List the deliveries of a receipt",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/receipt-deliveries?fiscalDocumentId=9f8e7d6c-5b4a-4321-8765-0fedcba98761",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "receipt-deliveries"
+              ],
+              "query": [
+                {
+                  "key": "fiscalDocumentId",
+                  "value": "9f8e7d6c-5b4a-4321-8765-0fedcba98761"
+                }
+              ]
+            },
+            "description": "List the electronic deliveries of one fiscal document\n\nhttps://bokapos.rs/en/api/referenca/dostava-racuna#listReceiptDeliveries"
+          }
+        },
+        {
+          "name": "E-mail a receipt",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "order-4127-email-1"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/receipt-deliveries",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "receipt-deliveries"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fiscalDocumentId\": \"9f8e7d6c-5b4a-4321-8765-0fedcba98761\",\n  \"channel\": \"EMAIL\",\n  \"recipient\": \"kupac@example.com\",\n  \"language\": \"sr-Latn\",\n  \"attachments\": [\n    \"a4\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Email a fiscalized receipt to the customer\n\nhttps://bokapos.rs/en/api/referenca/dostava-racuna#createReceiptDelivery"
+          }
+        },
+        {
+          "name": "Read a delivery",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/receipt-deliveries/f6a7b8c9-d0e1-4f2a-9b3c-4d5e6f7a8b90",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "receipt-deliveries",
+                "f6a7b8c9-d0e1-4f2a-9b3c-4d5e6f7a8b90"
+              ]
+            },
+            "description": "Read one electronic delivery\n\nhttps://bokapos.rs/en/api/referenca/dostava-racuna#getReceiptDelivery"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Operations",
+      "item": [
+        {
+          "name": "Read an operation",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/operations/9f8e7d6c-5b4a-4321-8765-0fedcba98761",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "operations",
+                "9f8e7d6c-5b4a-4321-8765-0fedcba98761"
+              ]
+            },
+            "description": "Inspect one tenant-scoped fiscal operation\n\nhttps://bokapos.rs/en/api/referenca/operacije#getOperation"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Catalogue",
+      "item": [
+        {
+          "name": "List products",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/products?taxpayerId=3f9c2a8e-6b1d-4e5a-9c47-1d2b8e6f0a11&search=slu%C5%A1alice&isActive=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "taxpayerId",
+                  "value": "3f9c2a8e-6b1d-4e5a-9c47-1d2b8e6f0a11"
+                },
+                {
+                  "key": "search",
+                  "value": "slušalice"
+                },
+                {
+                  "key": "isActive",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "List ESIR catalogue entries by organization or taxpayer\n\nhttps://bokapos.rs/en/api/referenca/katalog#listProducts"
+          }
+        },
+        {
+          "name": "Add a product",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "products"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"taxpayerId\": \"3f9c2a8e-6b1d-4e5a-9c47-1d2b8e6f0a11\",\n  \"sku\": \"BT-HP-001\",\n  \"gtin\": \"8606012345678\",\n  \"name\": \"Bluetooth slušalice\",\n  \"unitOfMeasure\": \"kom\",\n  \"grossUnitPrice\": 8990,\n  \"taxLabels\": [\n    \"F\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Add a product or service to the ESIR catalogue\n\nhttps://bokapos.rs/en/api/referenca/katalog#createProduct"
+          }
+        },
+        {
+          "name": "Export the catalogue (CSV)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/products/export?taxpayerId=3f9c2a8e-6b1d-4e5a-9c47-1d2b8e6f0a11",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "products",
+                "export"
+              ],
+              "query": [
+                {
+                  "key": "taxpayerId",
+                  "value": "3f9c2a8e-6b1d-4e5a-9c47-1d2b8e6f0a11"
+                }
+              ]
+            },
+            "description": "Export one taxpayer catalogue as deterministic CSV\n\nhttps://bokapos.rs/en/api/referenca/katalog#exportProducts"
+          }
+        },
+        {
+          "name": "Import the catalogue (CSV)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/csv"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/products/import?taxpayerId=3f9c2a8e-6b1d-4e5a-9c47-1d2b8e6f0a11",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "products",
+                "import"
+              ],
+              "query": [
+                {
+                  "key": "taxpayerId",
+                  "value": "3f9c2a8e-6b1d-4e5a-9c47-1d2b8e6f0a11"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "sku,name,gtin,unitOfMeasure,grossUnitPrice,taxLabels,isActive\nBT-HP-001,Bluetooth slušalice,8606012345678,kom,8990.00,F,true\nSRV-INST,Instalacija,,h,4000.00,F,true",
+              "options": {
+                "raw": {
+                  "language": "text"
+                }
+              }
+            },
+            "description": "Validate and upsert a bounded taxpayer catalogue CSV\n\nhttps://bokapos.rs/en/api/referenca/katalog#importProducts"
+          }
+        },
+        {
+          "name": "Read a product",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/products/d2e3f4a5-b6c7-4d8e-9f0a-1b2c3d4e5f60",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "products",
+                "d2e3f4a5-b6c7-4d8e-9f0a-1b2c3d4e5f60"
+              ]
+            },
+            "description": "Retrieve one tenant-scoped catalogue entry\n\nhttps://bokapos.rs/en/api/referenca/katalog#getProduct"
+          }
+        },
+        {
+          "name": "Update a product",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/products/d2e3f4a5-b6c7-4d8e-9f0a-1b2c3d4e5f60",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "products",
+                "d2e3f4a5-b6c7-4d8e-9f0a-1b2c3d4e5f60"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"BT-HP-001\",\n  \"gtin\": \"8606012345678\",\n  \"name\": \"Bluetooth slušalice Pro\",\n  \"unitOfMeasure\": \"kom\",\n  \"grossUnitPrice\": 9490,\n  \"taxLabels\": [\n    \"F\"\n  ],\n  \"isActive\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Replace editable catalogue details or active status\n\nhttps://bokapos.rs/en/api/referenca/katalog#updateProduct"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tax rates",
+      "item": [
+        {
+          "name": "Current tax rates",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/tax-rates?taxpayerId=3f9c2a8e-6b1d-4e5a-9c47-1d2b8e6f0a11&businessPremiseId=b7d4e2c1-9a3f-4c8e-8f21-6e5a0c9d3b22",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "tax-rates"
+              ],
+              "query": [
+                {
+                  "key": "taxpayerId",
+                  "value": "3f9c2a8e-6b1d-4e5a-9c47-1d2b8e6f0a11"
+                },
+                {
+                  "key": "businessPremiseId",
+                  "value": "b7d4e2c1-9a3f-4c8e-8f21-6e5a0c9d3b22"
+                }
+              ]
+            },
+            "description": "List the current PFR-provided tax labels and rates\n\nhttps://bokapos.rs/en/api/referenca/poreske-stope#listTaxRates"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Taxpayers and premises",
+      "item": [
+        {
+          "name": "List taxpayers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/taxpayers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "taxpayers"
+              ]
+            },
+            "description": "List taxpayer legal entities granted to this client\n\nhttps://bokapos.rs/en/api/referenca/obveznici-i-prostori#listTaxpayers"
+          }
+        },
+        {
+          "name": "Read a taxpayer",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/taxpayers/3f9c2a8e-6b1d-4e5a-9c47-1d2b8e6f0a11",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "taxpayers",
+                "3f9c2a8e-6b1d-4e5a-9c47-1d2b8e6f0a11"
+              ]
+            },
+            "description": "Retrieve one tenant-scoped taxpayer legal entity\n\nhttps://bokapos.rs/en/api/referenca/obveznici-i-prostori#getTaxpayer"
+          }
+        },
+        {
+          "name": "List business premises",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/taxpayers/3f9c2a8e-6b1d-4e5a-9c47-1d2b8e6f0a11/business-premises",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "taxpayers",
+                "3f9c2a8e-6b1d-4e5a-9c47-1d2b8e6f0a11",
+                "business-premises"
+              ]
+            },
+            "description": "List the taxpayer's business premises\n\nhttps://bokapos.rs/en/api/referenca/obveznici-i-prostori#listBusinessPremises"
+          }
+        },
+        {
+          "name": "Read a business premise",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/taxpayers/3f9c2a8e-6b1d-4e5a-9c47-1d2b8e6f0a11/business-premises/b7d4e2c1-9a3f-4c8e-8f21-6e5a0c9d3b22",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "taxpayers",
+                "3f9c2a8e-6b1d-4e5a-9c47-1d2b8e6f0a11",
+                "business-premises",
+                "b7d4e2c1-9a3f-4c8e-8f21-6e5a0c9d3b22"
+              ]
+            },
+            "description": "Retrieve one tenant-scoped distance-commerce premise\n\nhttps://bokapos.rs/en/api/referenca/obveznici-i-prostori#getBusinessPremise"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Security elements",
+      "item": [
+        {
+          "name": "List security elements",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/security-elements?businessPremiseId=b7d4e2c1-9a3f-4c8e-8f21-6e5a0c9d3b22",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "security-elements"
+              ],
+              "query": [
+                {
+                  "key": "businessPremiseId",
+                  "value": "b7d4e2c1-9a3f-4c8e-8f21-6e5a0c9d3b22"
+                }
+              ]
+            },
+            "description": "List safe security-element metadata\n\nhttps://bokapos.rs/en/api/referenca/bezbednosni-elementi#listSecurityElements"
+          }
+        },
+        {
+          "name": "Read a security element",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/security-elements/e5f6a7b8-c9d0-4e1f-8a2b-3c4d5e6f7a80",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "security-elements",
+                "e5f6a7b8-c9d0-4e1f-8a2b-3c4d5e6f7a80"
+              ]
+            },
+            "description": "Read safe security-element metadata\n\nhttps://bokapos.rs/en/api/referenca/bezbednosni-elementi#getSecurityElement"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Licence",
+      "item": [
+        {
+          "name": "Licence state",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/license",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "license"
+              ]
+            },
+            "description": "Read which paid capabilities the organization currently has\n\nhttps://bokapos.rs/en/api/referenca/licenca#getLicenseSummary"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Runtime",
+      "item": [
+        {
+          "name": "Runtime and readiness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/runtime",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "runtime"
+              ]
+            },
+            "description": "Read the authenticated tenant and fiscal-adapter readiness\n\nhttps://bokapos.rs/en/api/referenca/runtime#getRuntime"
+          }
+        }
+      ]
+    }
+  ]
+}
