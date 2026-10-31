@@ -63,6 +63,8 @@ tags:
     description: BOKA-only staff membership and platform authority administration.
   - name: Organization API credentials
     description: The customer's own view of its machine API credentials and the one-time secret pickup.
+  - name: AI connections
+    description: Owner- and Administrator-approved AI assistant connections for the BokaPOS MCP connector.
   - name: Security elements
     description: Secure onboarding and lifecycle management for premise-bound PFX credentials.
   - name: BOKA sandbox pool
@@ -2441,9 +2443,25 @@ paths:
       description: |
         Used by both customer self-service and BOKA-assisted onboarding.
         The resulting upload cannot be used to retrieve plaintext secrets.
-        The premise must belong to the session's environment; a production
-        certificate can never be bound to the BOKA sandbox premise
-        (422 `PREMISE_ENVIRONMENT_MISMATCH`).
+
+        The binding to a taxpayer and business premise is optional. When
+        `taxpayerId` and `businessPremiseId` are omitted (customer
+        self-service), the binding is resolved from the uploaded certificate
+        on completion: the certificate's TaxCore extensions name the taxpayer
+        PIB and the fiscal environment, and its subject names the premise
+        code (`OU`), the taxpayer name (`O`) and the premise address. A
+        taxpayer or premise that does not exist yet in the organization and
+        environment is created at that point; an existing one is reused when
+        its PIB, or its PU identifier compared without regard to case and
+        surrounding or repeated whitespace, matches. A machine credential may
+        open such a session only in its own environment
+        (422 `CREDENTIAL_ENVIRONMENT_MISMATCH`).
+
+        When both IDs are supplied (controlled integrations), the behaviour is
+        unchanged: the premise must belong to the taxpayer and to the
+        session's environment; a production certificate can never be bound to
+        the BOKA sandbox premise (422 `PREMISE_ENVIRONMENT_MISMATCH`).
+        Supplying only one of the two IDs is a validation error.
       security:
         - oauth2: [security-elements:write]
         - humanOidc: [security-elements:write]
@@ -2456,10 +2474,16 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [taxpayerId, businessPremiseId, environment]
+              required: [environment]
               properties:
-                taxpayerId: { type: string, format: uuid }
-                businessPremiseId: { type: string, format: uuid }
+                taxpayerId:
+                  type: string
+                  format: uuid
+                  description: Optional; supplied together with businessPremiseId, or omitted so the binding comes from the certificate.
+                businessPremiseId:
+                  type: string
+                  format: uuid
+                  description: Optional; supplied together with taxpayerId.
                 environment: { $ref: '#/components/schemas/FiscalEnvironment' }
       responses:
         '201':
@@ -2487,6 +2511,28 @@ paths:
         Customer self-service sends the original supplier ZIP as archiveBase64;
         direct pfxBase64 remains available for controlled integrations. Exactly
         one certificate-material field is permitted.
+
+        The JID is read from the certificate subject `serialNumber`. A `jid`
+        in the payload is optional; when present it must equal the
+        certificate's value (422 `CERTIFICATE_JID_MISMATCH`). A certificate
+        whose subject carries no usable identifier needs the payload `jid`
+        (422 `CERTIFICATE_JID_MISSING`).
+
+        On a session created without `taxpayerId` and `businessPremiseId`,
+        the taxpayer is found by the PIB in the certificate and the premise by
+        the premise code in the certificate subject, inside the session's
+        environment; missing records are created (the taxpayer prefilled from
+        the company registry when it answers, otherwise from the certificate
+        subject; the premise as a distance-commerce premise named after the
+        part of the code following the first hyphen). The certificate must
+        carry the TaxCore extensions (422 `CERTIFICATE_PROFILE_INVALID`),
+        name the session's environment (422 `CERTIFICATE_ENVIRONMENT_MISMATCH`)
+        and name the premise and, when the registry has no entry, the
+        taxpayer (422 `CERTIFICATE_SUBJECT_INCOMPLETE`). A premise cannot be
+        created for an inactive taxpayer (409 `TAXPAYER_INACTIVE`). The
+        response then carries `onboarding` with the safe names of the records
+        the element was bound to and whether each was created.
+
         The session is single-use. A structurally valid certificate remains
         PENDING_VERIFICATION until the V-PFR sandbox verification succeeds.
       security:
@@ -3026,6 +3072,201 @@ paths:
           description: The identity provider failed; the code says whether the pickup is still pending
         '503':
           description: The identity provider for API credentials is not configured
+
+  /v1/ai-connections:
+    get:
+      tags: [AI connections]
+      operationId: listAiConnections
+      x-boka-implementation: implemented
+      summary: List the organization's AI assistant connections
+      description: |
+        Active Owners and Administrators only. Safe metadata for every
+        connection that was not refused at creation: the requesting app, the
+        environment, the granted permissions and the OAuth scopes they map to.
+        No secret exists for a connection. Responses carry
+        `Cache-Control: no-store`.
+      security:
+        - humanOidc: [tenant:read]
+      responses:
+        '200':
+          description: The organization's AI connections, newest first
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiConnectionPage' }
+        '403':
+          description: Not an active Owner or Administrator of the organization
+    post:
+      tags: [AI connections]
+      operationId: createAiConnection
+      x-boka-implementation: implemented
+      summary: Record an AI connection the Owner or Administrator approved in the MCP consent screen
+      description: |
+        Called by the BokaPOS MCP gateway with the approving member's own
+        token; a token issued to any other client (including the portal) is
+        refused with `403` and `AI_CONNECTION_CONSENT_CLIENT_REQUIRED`. Reading
+        is always granted. Each permission adds scopes of the standard
+        integration bundle, so a connection never exceeds an API key, its
+        organization or its environment. The row is committed before the
+        identity provider creates the connection's client, which only the
+        gateway's published keys can authenticate as. Repeating the same
+        `consentRequestId` for the same approval answers `200` with the
+        original connection; any other reuse is `409`
+        `AI_CONNECTION_CONSENT_REQUEST_CONFLICT`. At most the configured number
+        of active connections per organization (`AI_CONNECTION_LIMIT_REACHED`).
+        AI connections are included in every licence.
+        Production with any write permission needs `productionWritesAcknowledged`
+        set to true (the approving member confirmed that the AI app issues real
+        fiscal receipts on the taxpayer's behalf); otherwise `422`
+        `AI_CONNECTION_PRODUCTION_ACKNOWLEDGEMENT_REQUIRED`. Who acknowledged,
+        and when, is recorded on the connection. If the identity provider fails,
+        any client it may have created is deleted.
+      security:
+        - humanOidc: [tenant:write]
+        - humanOidc: [ai-connections:write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiConnectionCreate' }
+      responses:
+        '200':
+          description: Replay of the same approval; the original connection
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiConnection' }
+        '201':
+          description: The connection is active
+          headers:
+            Location:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiConnection' }
+        '403':
+          description: Not an active Owner or Administrator, or not the MCP gateway's consent client
+        '409':
+          description: The consent request id was used for another approval, or the organization reached its connection limit
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '502':
+          description: The identity provider refused or failed; the connection is recorded as failed
+        '503':
+          description: AI connections are not configured in this environment (`AI_CONNECTION_PROVIDER_UNCONFIGURED`)
+
+  /v1/ai-connections/{aiConnectionId}:
+    get:
+      tags: [AI connections]
+      operationId: getAiConnection
+      x-boka-implementation: implemented
+      summary: Read one AI connection
+      description: |
+        Active Owners and Administrators only, within their own organization;
+        a connection of another organization is `404`.
+      security:
+        - humanOidc: [tenant:read]
+      parameters:
+        - name: aiConnectionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The connection
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiConnection' }
+        '403':
+          description: Not an active Owner or Administrator of the organization
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [AI connections]
+      operationId: updateAiConnection
+      x-boka-implementation: implemented
+      summary: Rename an AI connection or change its permissions
+      description: |
+        Active Owners and Administrators only. The new permissions are
+        recorded first with `providerSyncPending: true`, then applied to the
+        connection's client, removing scopes before adding any; the gateway's
+        next token, at most a minute later, carries exactly the new scopes.
+        If the provider fails the answer is `502` with
+        `providerSyncPending: true`, the connection keeps the recorded
+        permissions, and repeating the same request applies them. The
+        environment and the requesting app never change.
+        Turning on any write permission of a production connection needs
+        `productionWritesAcknowledged` set to true, as approving one does;
+        otherwise `422` `AI_CONNECTION_PRODUCTION_ACKNOWLEDGEMENT_REQUIRED`.
+      security:
+        - humanOidc: [tenant:write]
+        - humanOidc: [ai-connections:write]
+      parameters:
+        - name: aiConnectionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AiConnectionUpdate' }
+      responses:
+        '200':
+          description: The connection with the change applied
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiConnection' }
+        '403':
+          description: Not an active Owner or Administrator of the organization
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: The connection is not active (`AI_CONNECTION_NOT_ACTIVE`) or changed concurrently (`AI_CONNECTION_CHANGED`)
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '502':
+          description: The identity provider failed; the change is recorded and not yet applied
+        '503':
+          description: AI connections are not configured in this environment
+
+  /v1/ai-connections/{aiConnectionId}/revoke:
+    post:
+      tags: [AI connections]
+      operationId: revokeAiConnection
+      x-boka-implementation: implemented
+      summary: Revoke an AI connection
+      description: |
+        Active Owners and Administrators only. The connection's client is
+        disabled first, so the gateway's next token request fails, then the
+        connection is marked revoked; a token issued before stays valid for
+        at most its one-minute lifetime. Revoking a revoked connection answers
+        `200`. A connection still being created answers `409`
+        `AI_CONNECTION_PENDING`.
+        Removing deletes the connection's identity-provider client, so it can
+        never authenticate again; the BokaPOS record and its audit stay.
+      security:
+        - humanOidc: [tenant:write]
+        - humanOidc: [ai-connections:write]
+      parameters:
+        - name: aiConnectionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The revoked connection
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiConnection' }
+        '403':
+          description: Not an active Owner or Administrator of the organization
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: The connection is still being created or was refused at creation
+        '502':
+          description: The identity provider failed; the connection is unchanged
+        '503':
+          description: AI connections are not configured in this environment
 
   /v1/license:
     get:
@@ -4078,6 +4319,170 @@ paths:
         '409': { description: Reviewed versions, customer, period or policy conflict }
         '422': { description: Invalid period, confirmation or request }
         '503': { description: Monthly automation is disabled }
+  /v1/staff-invoice-customers/{customerId}/monthly-automation/enabled:
+    put:
+      tags: [Monthly invoice automation]
+      operationId: toggleMonthlyInvoicePolicy
+      x-boka-implementation: implemented
+      summary: Per-customer opt-out toggle for the monthly flow
+      description: Active Root membership only; no support contexts. Enabling appends a full policy (prepare, issue and send) whose ordinary-invoice eligibility, numbering reference and payment code are copied from the current Root-level invoicing defaults; the acting Root is its author and the first service month is kept from the previous version or is the current month. Disabling appends a disabled version. Existing policy versions are never modified. Requires the current account binding, a non-public-sector buyer and recorded invoicing defaults.
+      security:
+        - humanOidc: []
+      parameters:
+        - name: customerId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MonthlyInvoiceToggle' }
+      responses:
+        '200':
+          description: Current policy after the toggle; never evidence of issuance or payment
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MonthlyInvoicePolicy' }
+        '400': { description: Malformed request }
+        '401': { description: Authentication required }
+        '403': { description: Active Root required; support contexts refused }
+        '404': { description: Customer not found }
+        '409': { description: Reviewed version, defaults, account binding or customer conflict }
+        '422': { description: Invalid request }
+  /v1/staff-invoices/defaults:
+    get:
+      tags: [BOKA invoice months]
+      operationId: getInvoicingDefaults
+      x-boka-implementation: implemented
+      summary: Read the Root-level invoicing defaults
+      description: Active Root membership only; no support contexts. The numbering-registry reference, the ordinary-invoice eligibility for buyers absent from SEF and the payment code, recorded once and versioned. Every default policy and every issuance snapshots the values it used. When no version exists the suggested values are returned with version 0 and configured=false.
+      security:
+        - humanOidc: []
+      responses:
+        '200':
+          description: Current defaults or the suggested values
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InvoicingDefaults' }
+        '401': { description: Authentication required }
+        '403': { description: Active Root required; support contexts refused }
+    put:
+      tags: [BOKA invoice months]
+      operationId: saveInvoicingDefaults
+      x-boka-implementation: implemented
+      summary: Record a new version of the invoicing defaults
+      description: Active Root membership only; no support contexts. Appends an immutable version authored by the acting Root with the exact expected version. Exact response-loss replay returns the existing version; changed content with a stale version conflicts. Existing policies and issued invoices keep the values they snapshotted; the new version applies to customers onboarded afterwards and to future opt-in toggles.
+      security:
+        - humanOidc: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InvoicingDefaultsWrite' }
+      responses:
+        '200':
+          description: Exact replay of the current version
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InvoicingDefaults' }
+        '201':
+          description: New version recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InvoicingDefaults' }
+        '400': { description: Malformed request }
+        '401': { description: Authentication required }
+        '403': { description: Active Root required; support contexts refused }
+        '409': { description: Expected version is stale }
+        '422': { description: Invalid reference, payment code or missing confirmation }
+  /v1/staff-invoices/months/{period}:
+    get:
+      tags: [BOKA invoice months]
+      operationId: getInvoiceMonth
+      x-boka-implementation: implemented
+      summary: Every billing customer for one service month with its status and the available action
+      description: Active Root membership only; no support contexts. One row per organization with the account review, the linked customer, its policy, the closed or estimated statement, the draft, the issued document, the SEF/VAT/e-mail states and the last recorded outcome. Statuses are unlinked, blocked, open, ready, closed, draft, issued, sent, needs_review and settled_without_invoice. The expected route is the last recorded registration result for that buyer; the fresh lookup immediately before issuance decides. This read never contacts SEF, closes a month or writes.
+      security:
+        - humanOidc: []
+      parameters:
+        - name: period
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$' }
+      responses:
+        '200':
+          description: The month table; never evidence of issuance or payment
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InvoiceMonth' }
+        '401': { description: Authentication required }
+        '403': { description: Active Root required; support contexts refused }
+        '422': { description: Invalid period }
+  /v1/staff-invoices/months/{period}/{organizationId}/preview/pdf:
+    get:
+      tags: [BOKA invoice months]
+      operationId: previewInvoiceMonthPdf
+      x-boka-implementation: implemented
+      summary: Preview the invoice the one-click action would issue for this customer-month
+      description: Active Root membership only; no support contexts. Returns the issued invoice byte for byte when it exists, otherwise the unnumbered review render of the saved draft, otherwise a render of the closed or prepared statement with today's issue date and 15-day terms. It never reserves a number, closes a month or writes.
+      security:
+        - humanOidc: []
+      parameters:
+        - name: period
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$' }
+        - name: organizationId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: PDF preview or the issued invoice
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        '401': { description: Authentication required }
+        '403': { description: Active Root required; support contexts refused }
+        '404': { description: Organization or licence not found }
+        '409': { description: Month not ended, zero charge, account blocker or unsupported content }
+        '422': { description: Invalid period }
+  /v1/staff-invoices/months/{period}/{organizationId}/issue-and-send:
+    post:
+      tags: [BOKA invoice months]
+      operationId: issueAndSendInvoiceMonth
+      x-boka-implementation: implemented
+      summary: 'One explicit Root action for one customer-month: link, close, prepare, issue and send'
+      description: 'Active Root membership only; no support contexts. Binds the exact organization. Runs synchronously and in order the implementations the workers use: links the billing customer and gives it the default policy when missing, closes exactly the reviewed statement (expectedSourceSha256) if open, prepares and approves the draft, issues through the route chosen by the fresh SEF registration lookup and sends the BOKA PDF to the current Owner. It continues from whatever state exists, never creates a second invoice, never resends a started e-mail and never retries an unknown outcome; a zero charge settles without an invoice. A refusal before any step ran returns 409 with a code; a run that stops for review returns 200 with outcome needs_review and the reason.'
+      security:
+        - humanOidc: []
+      parameters:
+        - name: period
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$' }
+        - name: organizationId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InvoiceMonthAction' }
+      responses:
+        '200':
+          description: The action ran; outcome completed or needs_review with the refreshed row
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InvoiceMonthActionResult' }
+        '400': { description: Malformed request }
+        '401': { description: Authentication required }
+        '403': { description: Active Root required; support contexts refused; organization scope mismatch }
+        '404': { description: Organization not found }
+        '409': { description: 'Refused before any step ran, with a code (month not ended, statement changed, blocked account, missing defaults)' }
+        '422': { description: Invalid period, hash or missing confirmation }
   /v1/staff-invoices/{draftId}/email:
     get:
       tags: [BOKA production invoice email]
@@ -4642,6 +5047,7 @@ components:
             advance:close: Close Advance cases through the server-owned Refund and final Sale chain
             configuration:read: Read freshly fetched PFR tax configuration within the authorized tenant
             security-elements:read: Read safe V-PFR security-element metadata within the authorized tenant
+            ai-connections:write: Create, change and remove AI connections; the MCP gateway's consent sign-in carries this instead of tenant:write
             security-elements:write: Onboard, suspend, or retire V-PFR security elements within the authorized tenant
             memberships:read: Read organization membership metadata
             memberships:write: Invite or change non-Owner organization members
@@ -5044,6 +5450,97 @@ components:
         draftSha256: { type: string, nullable: true }
         recordedAt: { type: string, format: date-time }
         canRecheck: { type: boolean, description: Saved attention may be rechecked by Root; a changed previously approved draft requires explicit manual review. }
+    MonthlyInvoiceToggle:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, enabled]
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+        enabled: { type: boolean }
+    InvoicingDefaultsWrite:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, numberRegistryReference, allowOrdinary, paymentCode, confirmDefaults]
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+        numberRegistryReference: { type: string, minLength: 1, maxLength: 256 }
+        allowOrdinary: { type: boolean, description: Ordinary-invoice and individual-VAT eligibility when the fresh lookup shows the buyer absent from SEF. }
+        paymentCode: { type: string, enum: ['220', '221'] }
+        confirmDefaults: { type: boolean, enum: [true] }
+    InvoicingDefaults:
+      type: object
+      required: [version, numberRegistryReference, allowOrdinary, paymentCode, recordedAt, configured, blockingReason]
+      properties:
+        version: { type: integer, format: int64, description: 0 when no version exists; the suggested values are then returned. }
+        numberRegistryReference: { type: string }
+        allowOrdinary: { type: boolean }
+        paymentCode: { type: string, enum: ['220', '221'] }
+        recordedAt: { type: string, format: date-time, nullable: true }
+        configured: { type: boolean, description: A version exists and its Root author is still active. }
+        blockingReason: { type: string, nullable: true, enum: [INVOICING_DEFAULTS_REQUIRED, INVOICING_DEFAULTS_AUTHOR_INACTIVE, null] }
+    InvoiceMonthRow:
+      type: object
+      required: [organizationId, organizationName, customerId, customerVersion, legalName, taxIdentifier, ownerEmail, status, reason, blockers, grossTotal, sourceSha256, requiresOpeningConfirmation, automation, policyVersion, route, expectedRoute, closedPeriodId, draftId, draftVersion, draftState, documentId, invoiceNumber, issuanceState, vatState, verificationState, emailState, lastOutcome, lastOutcomeAt, canIssueAndSend, canPreview]
+      properties:
+        organizationId: { type: string, format: uuid }
+        organizationName: { type: string }
+        customerId: { type: string, format: uuid, nullable: true }
+        customerVersion: { type: integer, format: int64, nullable: true }
+        legalName: { type: string, nullable: true }
+        taxIdentifier: { type: string, nullable: true }
+        ownerEmail: { type: string, nullable: true }
+        status: { type: string, enum: [unlinked, blocked, open, ready, closed, draft, issued, sent, needs_review, settled_without_invoice] }
+        reason: { type: string, nullable: true }
+        blockers: { type: array, items: { type: string } }
+        grossTotal: { type: number, nullable: true, description: Closed charge, or the estimate for an open or not yet closed month. }
+        sourceSha256: { type: string, nullable: true, description: Hash of the closed or prepared statement; the action binds to it. }
+        requiresOpeningConfirmation: { type: boolean }
+        automation: { type: string, enum: [none, disabled, prepare_only, full] }
+        policyVersion: { type: integer, format: int64 }
+        route: { type: string, nullable: true, enum: [sef, ordinary, null] }
+        expectedRoute: { type: string, nullable: true, enum: [sef, ordinary, null], description: Last recorded registration result for this buyer; the fresh lookup at issuance decides. }
+        closedPeriodId: { type: string, format: uuid, nullable: true }
+        draftId: { type: string, format: uuid, nullable: true }
+        draftVersion: { type: integer, format: int64, nullable: true }
+        draftState: { type: string, nullable: true, enum: [draft, approved, null] }
+        documentId: { type: string, format: uuid, nullable: true }
+        invoiceNumber: { type: string, nullable: true }
+        issuanceState: { type: string, nullable: true, enum: [issued, submitted, outcome_unknown, demo, null] }
+        vatState: { type: string, nullable: true, enum: [verified, submitted, outcome_unknown, null] }
+        verificationState: { type: string, nullable: true }
+        emailState: { type: string, nullable: true, enum: [smtp_accepted, not_sent, outcome_unknown, null] }
+        lastOutcome: { type: string, nullable: true }
+        lastOutcomeAt: { type: string, format: date-time, nullable: true }
+        canIssueAndSend: { type: boolean }
+        canPreview: { type: boolean }
+    InvoiceMonth:
+      type: object
+      required: [period, today, ended, defaultsConfigured, defaultsBlockingReason, monthlyPreparationEnabled, monthlyIssueAndSendEnabled, productionIssuanceMode, productionEmailMode, items]
+      properties:
+        period: { type: string }
+        today: { type: string, format: date }
+        ended: { type: boolean }
+        defaultsConfigured: { type: boolean }
+        defaultsBlockingReason: { type: string, nullable: true }
+        monthlyPreparationEnabled: { type: boolean }
+        monthlyIssueAndSendEnabled: { type: boolean }
+        productionIssuanceMode: { type: string, enum: [disabled, exact_id, root_review] }
+        productionEmailMode: { type: string, enum: [disabled, exact_id, root_review] }
+        items: { type: array, items: { $ref: '#/components/schemas/InvoiceMonthRow' } }
+    InvoiceMonthAction:
+      type: object
+      additionalProperties: false
+      required: [expectedSourceSha256, confirm]
+      properties:
+        expectedSourceSha256: { type: string, pattern: '^[a-f0-9]{64}$', description: The row's sourceSha256 Root reviewed in the summary dialog. }
+        confirm: { type: boolean, enum: [true] }
+    InvoiceMonthActionResult:
+      type: object
+      required: [outcome, reason, row]
+      properties:
+        outcome: { type: string, enum: [completed, needs_review] }
+        reason: { type: string, nullable: true }
+        row: { $ref: '#/components/schemas/InvoiceMonthRow' }
     MonthlyInvoiceRunPage:
       type: object
       required: [items, page, hasMore]
@@ -7468,9 +7965,13 @@ components:
       description: |
         Staff-only pool intake. Supply exactly one of archiveBase64 (the original
         supplier ZIP, parsed with the same bounded reader as customer intake) or
-        pfxBase64, plus the PFX password and PAK. JID, PIB, and the legal name
-        are read from the certificate when omitted; when supplied they must match
-        the certificate. Premise fields default to informational BOKA values.
+        pfxBase64, plus the PFX password and PAK. JID and PIB are read from the
+        certificate when omitted and must match it when supplied. The legal
+        name defaults to the certificate subject `O`, the premise PU identifier
+        to the subject `OU` (the premise code, `<locationId>-<name>`) and the
+        premise name to the part of that code after the first hyphen; a
+        certificate whose subject lacks them falls back to the informational
+        BOKA values. Staff may still supply any of the three.
         Secrets travel once over TLS and are immediately protected into the
         dedicated pool custody store.
       properties:
@@ -7631,6 +8132,103 @@ components:
           type: array
           items: { $ref: '#/components/schemas/OrganizationApiCredential' }
 
+    AiConnectionPermission:
+      type: string
+      enum: [fiscal-documents, refunds, advances, proforma-training, catalogue]
+      description: |
+        One write toggle; reading is always granted. fiscal-documents adds
+        fiscal:write (sales, official copies and receipt e-mail), refunds adds
+        refund:write, advances adds advance:write and advance:close,
+        proforma-training adds proforma-training:write, catalogue adds
+        catalogue:write.
+
+    AiConnectionClientApplication:
+      type: object
+      additionalProperties: false
+      required: [name, clientId, redirectHost]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100, examples: [Claude] }
+        clientId:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: The app's OAuth client id at the MCP gateway, a Client ID Metadata Document URL or a registered id.
+        redirectHost: { type: string, maxLength: 253, examples: [claude.ai] }
+
+    AiConnectionCreate:
+      type: object
+      additionalProperties: false
+      required: [consentRequestId, environment, displayName, clientApplication, permissions]
+      properties:
+        consentRequestId:
+          type: string
+          pattern: '^[A-Za-z0-9._~-]{16,100}$'
+          description: The gateway's id for the approval; one approval yields one connection.
+        environment: { $ref: '#/components/schemas/FiscalEnvironment' }
+        displayName: { type: string, minLength: 1, maxLength: 100 }
+        clientApplication: { $ref: '#/components/schemas/AiConnectionClientApplication' }
+        permissions:
+          type: array
+          maxItems: 5
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/AiConnectionPermission' }
+          description: An empty list grants read-only access.
+        productionWritesAcknowledged:
+          type: boolean
+          description: "Required true for production with any write permission: the member confirmed that the AI app issues real fiscal receipts."
+
+    AiConnectionUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 100 }
+        permissions:
+          type: array
+          maxItems: 5
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/AiConnectionPermission' }
+        productionWritesAcknowledged:
+          type: boolean
+          description: "Required true when this change turns on a write permission of a production connection."
+
+    AiConnection:
+      type: object
+      additionalProperties: false
+      required: [id, environment, displayName, clientApplication, permissions, scopes, oauthClientId, status, providerSyncPending, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        environment: { $ref: '#/components/schemas/FiscalEnvironment' }
+        displayName: { type: string }
+        clientApplication: { $ref: '#/components/schemas/AiConnectionClientApplication' }
+        permissions:
+          type: array
+          items: { $ref: '#/components/schemas/AiConnectionPermission' }
+        scopes:
+          type: array
+          items: { type: string }
+          description: The OAuth scopes the permissions map to, read scopes included.
+        oauthClientId:
+          type: string
+          description: The identity-provider client the MCP gateway authenticates as for this connection. It has no secret.
+        status: { type: string, enum: [pending, active, revoked, failed] }
+        providerSyncPending:
+          type: boolean
+          description: True while recorded permissions are not yet applied at the identity provider.
+        approvedBy: { type: string, nullable: true, description: The approving member's display name. }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        revokedAt: { type: string, format: date-time, nullable: true }
+
+    AiConnectionPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AiConnection' }
+
     ApiCredentialReveal:
       type: object
       additionalProperties: false
@@ -7695,7 +8293,7 @@ components:
     SecurityElementUploadPayload:
       type: object
       additionalProperties: false
-      required: [uploadSessionId, jid, pfxPassword, pak]
+      required: [uploadSessionId, pfxPassword, pak]
       description: Plaintext schema before compact-JWE encryption; never send this object directly.
       oneOf:
         - required: [archiveBase64]
@@ -7705,7 +8303,10 @@ components:
           type: string
           format: uuid
           description: Must equal the session ID in the one-time upload URL.
-        jid: { type: string, pattern: '^[A-Z0-9]{8}$' }
+        jid:
+          type: string
+          pattern: '^[A-Z0-9]{8}$'
+          description: Optional. The JID is read from the certificate subject serialNumber; when supplied it must match that value.
         archiveBase64:
           type: string
           format: byte
@@ -7767,6 +8368,23 @@ components:
           enum: [pending-verification, active, suspended, retired]
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+        onboarding:
+          type: [object, 'null']
+          additionalProperties: false
+          description: |
+            Present only in the upload-completion response (null or absent
+            elsewhere): the safe names of the taxpayer and business premise
+            the element was bound to, read from the stored records, and
+            whether each record was created by this upload. Never secret
+            material.
+          required: [taxIdentifier, taxpayerLegalName, taxpayerCreated, businessPremisePuIdentifier, businessPremiseName, premiseCreated]
+          properties:
+            taxIdentifier: { type: string }
+            taxpayerLegalName: { type: string }
+            taxpayerCreated: { type: boolean }
+            businessPremisePuIdentifier: { type: string }
+            businessPremiseName: { type: string }
+            premiseCreated: { type: boolean }
 
     FiscalDocumentPage:
       type: object
