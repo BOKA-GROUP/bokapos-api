@@ -73,6 +73,48 @@ tags:
     description: Customer-visible licence state and the Owner billing overview; payment never happens on the platform.
   - name: BOKA licensing
     description: Root-only issuance of organization licences and recording of invoices issued outside the platform.
+  - name: Webhooks
+    description: Signed event notifications to customer endpoints and the pull event feed; notifications only, never fiscal evidence.
+webhooks:
+  webhookEvent:
+    post:
+      tags: [Webhooks]
+      operationId: receiveWebhookEvent
+      summary: An event pushed to a customer webhook endpoint
+      description: |
+        Sent by BokaPOS to every enabled endpoint of the event's environment
+        that subscribes to the type and existed when the change happened.
+        Standard Webhooks headers carry the event id, the attempt time and an
+        Ed25519 (v1a) signature over `{webhook-id}.{webhook-timestamp}.{body}`;
+        verify it with a public key from GET /v1/webhook-signing-keys and
+        reject timestamps more than five minutes away. Delivery is at least
+        once and unordered; drop duplicates by `webhook-id`. An event is a
+        notification, never fiscal evidence: read the fiscal document before
+        acting on money. Answer 2xx within 10 seconds; anything else is retried
+        after 1 min, 5 min, 30 min, 2 h, 6 h, 12 h, 24 h and 24 h.
+      parameters:
+        - name: webhook-id
+          in: header
+          required: true
+          schema: { type: string, format: uuid }
+        - name: webhook-timestamp
+          in: header
+          required: true
+          description: Unix seconds of this attempt.
+          schema: { type: integer }
+        - name: webhook-signature
+          in: header
+          required: true
+          description: One `v1a,<base64 signature>` entry per active signing key, separated by spaces.
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WebhookEvent' }
+      responses:
+        '200':
+          description: Any 2xx answer acknowledges the event
 paths:
   /v1/runtime:
     get:
@@ -2253,6 +2295,9 @@ paths:
               - api-credential.handoff-created
               - api-credential.handoff-revealed
               - api-credential.handoff-outcome-unknown
+              - webhook-endpoint.created
+              - webhook-endpoint.updated
+              - webhook-endpoint.deleted
         - name: outcome
           in: query
           schema: { type: string, enum: [success, failure] }
@@ -2953,7 +2998,10 @@ paths:
       operationId: revokeApiCredential
       x-boka-implementation: implemented
       summary: Revoke a machine API credential
-      description: Disables the identity-provider client, then durably marks the credential revoked.
+      description: |
+        Disables the identity-provider client, then durably marks the
+        credential revoked. Webhook endpoints the credential registered are
+        switched off in the same save (`disabledReason: revoked`).
       security:
         - humanOidc: [customers:write]
       parameters:
@@ -3196,6 +3244,8 @@ paths:
         Turning on any write permission of a production connection needs
         `productionWritesAcknowledged` set to true, as approving one does;
         otherwise `422` `AI_CONNECTION_PRODUCTION_ACKNOWLEDGEMENT_REQUIRED`.
+        Taking the `webhooks` permission away switches off the webhook
+        endpoints the connection registered (`disabledReason: revoked`).
       security:
         - humanOidc: [tenant:write]
         - humanOidc: [ai-connections:write]
@@ -3243,6 +3293,8 @@ paths:
         `AI_CONNECTION_PENDING`.
         Removing deletes the connection's identity-provider client, so it can
         never authenticate again; the BokaPOS record and its audit stay.
+        Webhook endpoints the connection registered are switched off in the
+        same save (`disabledReason: revoked`).
       security:
         - humanOidc: [tenant:write]
         - humanOidc: [ai-connections:write]
@@ -5004,6 +5056,291 @@ paths:
         '409':
           description: Draft changed, unapproved, already reserved, unsupported content, stale customer or wrong issue date
 
+  /v1/webhook-endpoints:
+    get:
+      tags: [Webhooks]
+      operationId: listWebhookEndpoints
+      x-boka-implementation: implemented
+      summary: List the webhook endpoints of the caller's environment or environments
+      description: |
+        A machine credential sees the endpoints of its own environment. A
+        customer Owner or Administrator sees both environments unless the
+        organization hides its sandbox data. Deleted endpoints are not listed.
+      security:
+        - oauth2: [webhooks:read]
+        - humanOidc: [tenant:read]
+      responses:
+        '200':
+          description: Webhook endpoints
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookEndpointList' }
+    post:
+      tags: [Webhooks]
+      operationId: createWebhookEndpoint
+      x-boka-implementation: implemented
+      summary: Register an HTTPS endpoint for webhook events
+      description: |
+        The URL must be absolute https without user information or a
+        fragment and must resolve to a public address; it is checked again at
+        every connection. A machine credential registers in its own
+        environment and may omit `environment`; a human must name it. One
+        live endpoint per URL and environment: registering the same URL again
+        answers 409 with the existing `webhookEndpointId`. At most ten
+        endpoints per organization and environment. Free in the base licence.
+      security:
+        - oauth2: [webhooks:write]
+        - humanOidc: [tenant:write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WebhookEndpointCreate' }
+      responses:
+        '201':
+          description: Endpoint created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookEndpoint' }
+        '409':
+          description: The URL is already registered in this environment, or the endpoint limit is reached
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookEndpointConflict' }
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /v1/webhook-endpoints/{webhookEndpointId}:
+    get:
+      tags: [Webhooks]
+      operationId: getWebhookEndpoint
+      x-boka-implementation: implemented
+      summary: Read one webhook endpoint
+      security:
+        - oauth2: [webhooks:read]
+        - humanOidc: [tenant:read]
+      parameters:
+        - $ref: '#/components/parameters/WebhookEndpointId'
+      responses:
+        '200':
+          description: Webhook endpoint
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookEndpoint' }
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Webhooks]
+      operationId: putWebhookEndpoint
+      x-boka-implementation: implemented
+      summary: Replace an endpoint's URL, description, event types and enabled state
+      description: |
+        `enabled: true` re-enables an endpoint that was switched off by hand or
+        after 72 hours of failed deliveries; delivery resumes with new events.
+        The environment never changes.
+      security:
+        - oauth2: [webhooks:write]
+        - humanOidc: [tenant:write]
+      parameters:
+        - $ref: '#/components/parameters/WebhookEndpointId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WebhookEndpointUpdate' }
+      responses:
+        '200':
+          description: Updated endpoint
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookEndpoint' }
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            `WEBHOOK_ENDPOINT_URL_EXISTS` when another endpoint of this
+            environment already uses the URL; `WEBHOOK_ENDPOINT_CHANGED` when the
+            endpoint changed meanwhile (a delivery result is recorded on it after
+            every attempt): read it again and repeat the change.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Conflict' }
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Webhooks]
+      operationId: deleteWebhookEndpoint
+      x-boka-implementation: implemented
+      summary: Remove a webhook endpoint
+      description: Pending deliveries are cancelled; the delivery history is kept.
+      security:
+        - oauth2: [webhooks:write]
+        - humanOidc: [tenant:write]
+      parameters:
+        - $ref: '#/components/parameters/WebhookEndpointId'
+      responses:
+        '204':
+          description: Endpoint removed
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`WEBHOOK_ENDPOINT_CHANGED`: the endpoint changed meanwhile; read it again and repeat the removal.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Conflict' }
+
+  /v1/webhook-endpoints/{webhookEndpointId}/test-events:
+    post:
+      tags: [Webhooks]
+      operationId: createWebhookTestEvent
+      x-boka-implementation: implemented
+      summary: Send one webhook-endpoint.test event to this endpoint only
+      description: The test event is never shown in the event feed and never sent to another endpoint.
+      security:
+        - oauth2: [webhooks:write]
+        - humanOidc: [tenant:write]
+      parameters:
+        - $ref: '#/components/parameters/WebhookEndpointId'
+      responses:
+        '202':
+          description: Test event queued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookTestEvent' }
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: The endpoint is disabled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Conflict' }
+
+  /v1/webhook-endpoints/{webhookEndpointId}/deliveries:
+    get:
+      tags: [Webhooks]
+      operationId: listWebhookDeliveries
+      x-boka-implementation: implemented
+      summary: The latest 100 deliveries to this endpoint, newest first, with their last attempt
+      security:
+        - oauth2: [webhooks:read]
+        - humanOidc: [tenant:read]
+      parameters:
+        - $ref: '#/components/parameters/WebhookEndpointId'
+      responses:
+        '200':
+          description: Deliveries
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookDeliveryList' }
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/webhook-endpoints/{webhookEndpointId}/deliveries/{webhookDeliveryId}/resend:
+    post:
+      tags: [Webhooks]
+      operationId: resendWebhookDelivery
+      x-boka-implementation: implemented
+      summary: Make one more attempt of a finished delivery, immediately
+      description: |
+        Allowed for succeeded, failed and cancelled deliveries of an enabled
+        endpoint. A failed resend does not start a new retry series.
+      security:
+        - oauth2: [webhooks:write]
+        - humanOidc: [tenant:write]
+      parameters:
+        - $ref: '#/components/parameters/WebhookEndpointId'
+        - $ref: '#/components/parameters/WebhookDeliveryId'
+      responses:
+        '202':
+          description: Delivery queued again
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookDelivery' }
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            `WEBHOOK_DELIVERY_IN_PROGRESS` while the delivery is still queued or
+            sending, `WEBHOOK_ENDPOINT_DISABLED` when the endpoint is switched
+            off, `WEBHOOK_DELIVERY_CHANGED` when the delivery changed meanwhile.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Conflict' }
+
+  /v1/events:
+    get:
+      tags: [Webhooks]
+      operationId: listEvents
+      x-boka-implementation: implemented
+      summary: Pull the same events that webhooks push, oldest first
+      description: |
+        Keep `nextCursor` and send it as `after` on the next call; with nothing
+        new the same cursor comes back. Events appear a moment after they
+        commit and stay for 30 days. Test events never appear. Scoped to the
+        caller's environment like every other read.
+      security:
+        - oauth2: [webhooks:read]
+        - humanOidc: [tenant:read]
+      parameters:
+        - name: after
+          in: query
+          description: Opaque cursor from a previous page.
+          schema: { type: string, pattern: '^[0-9]{1,19}$' }
+        - name: types
+          in: query
+          description: Comma-separated event types to include.
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 100 }
+      responses:
+        '200':
+          description: Page of events
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookEventPage' }
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /v1/events/{eventId}:
+    get:
+      tags: [Webhooks]
+      operationId: getEvent
+      x-boka-implementation: implemented
+      summary: Read one event from the last 30 days
+      security:
+        - oauth2: [webhooks:read]
+        - humanOidc: [tenant:read]
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: Event
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookEvent' }
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/webhook-signing-keys:
+    get:
+      tags: [Webhooks]
+      operationId: listWebhookSigningKeys
+      x-boka-implementation: implemented
+      summary: The public keys that verify webhook signatures
+      description: |
+        Trust every listed key. During a rotation two keys are listed and every
+        delivery carries one signature per key.
+      security:
+        - oauth2: [webhooks:read]
+        - humanOidc: [tenant:read]
+      responses:
+        '200':
+          description: Active public keys
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookSigningKeyList' }
+
 components:
   securitySchemes:
     oauth2:
@@ -5027,6 +5364,8 @@ components:
             tenant:write: Administer taxpayers and premises
             security-elements:read: Read safe V-PFR security-element metadata
             security-elements:write: Onboard or rotate V-PFR security elements
+            webhooks:read: Read webhook endpoints, deliveries, signing keys and the event feed
+            webhooks:write: Register, change, test and remove webhook endpoints
     humanOidc:
       type: oauth2
       description: Confidential BFF authorization-code flow. Human claims are intersected with active persisted memberships.
@@ -5107,6 +5446,21 @@ components:
       schema: { type: string, format: uuid }
     ProformaTrainingWorkflowId:
       name: proformaTrainingWorkflowId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    WebhookEndpointId:
+      name: webhookEndpointId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    WebhookDeliveryId:
+      name: webhookDeliveryId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    EventId:
+      name: eventId
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -8134,13 +8488,14 @@ components:
 
     AiConnectionPermission:
       type: string
-      enum: [fiscal-documents, refunds, advances, proforma-training, catalogue]
+      enum: [fiscal-documents, refunds, advances, proforma-training, catalogue, webhooks]
       description: |
         One write toggle; reading is always granted. fiscal-documents adds
         fiscal:write (sales, official copies and receipt e-mail), refunds adds
         refund:write, advances adds advance:write and advance:close,
         proforma-training adds proforma-training:write, catalogue adds
-        catalogue:write.
+        catalogue:write, webhooks adds webhooks:read and webhooks:write (the
+        endpoints, their deliveries and the event feed).
 
     AiConnectionClientApplication:
       type: object
@@ -8169,7 +8524,7 @@ components:
         clientApplication: { $ref: '#/components/schemas/AiConnectionClientApplication' }
         permissions:
           type: array
-          maxItems: 5
+          maxItems: 6
           uniqueItems: true
           items: { $ref: '#/components/schemas/AiConnectionPermission' }
           description: An empty list grants read-only access.
@@ -8185,7 +8540,7 @@ components:
         displayName: { type: string, minLength: 1, maxLength: 100 }
         permissions:
           type: array
-          maxItems: 5
+          maxItems: 6
           uniqueItems: true
           items: { $ref: '#/components/schemas/AiConnectionPermission' }
         productionWritesAcknowledged:
@@ -8417,6 +8772,273 @@ components:
         code: { type: string }
         operationId: { type: string, format: uuid }
         message: { type: string }
+
+    WebhookEventType:
+      type: string
+      enum:
+        - fiscal-document.fiscalized
+        - fiscal-document.outcome-unknown
+        - receipt-delivery.delivered
+        - receipt-delivery.failed
+        - security-element.activated
+        - security-element.suspended
+        - security-element.retired
+        - security-element.expiring
+        - license.updated
+
+    WebhookEndpoint:
+      type: object
+      additionalProperties: false
+      required: [id, environment, url, description, eventTypes, enabled, status, disabledReason, failingSince, lastSuccessAt, lastFailureAt, createdBy, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        environment: { type: string, enum: [sandbox, production] }
+        url: { type: string, format: uri, maxLength: 2048 }
+        description: { type: [string, 'null'], maxLength: 200 }
+        eventTypes:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/WebhookEventType' }
+        enabled: { type: boolean }
+        status: { type: string, enum: [enabled, disabled] }
+        disabledReason:
+          type: [string, 'null']
+          enum: [manual, failing, revoked, null]
+          description: |
+            failing means 72 hours of failed deliveries without a single
+            success; revoked means the API key or AI connection that registered
+            the endpoint was revoked, or the AI connection lost its webhooks
+            permission. `PUT` with `enabled: true` switches it back on.
+        failingSince: { type: [string, 'null'], format: date-time }
+        lastSuccessAt: { type: [string, 'null'], format: date-time }
+        lastFailureAt: { type: [string, 'null'], format: date-time }
+        createdBy:
+          type: object
+          additionalProperties: false
+          required: [kind, name]
+          description: Who registered the endpoint. The name is returned to Owners and Administrators only, never to a machine credential.
+          properties:
+            kind: { type: string, enum: [person, api-credential, ai-connection, unknown] }
+            name: { type: [string, 'null'], maxLength: 200 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    WebhookEndpointList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/WebhookEndpoint' }
+
+    WebhookEndpointCreate:
+      type: object
+      additionalProperties: false
+      required: [url, eventTypes]
+      properties:
+        url: { type: string, format: uri, maxLength: 2048 }
+        description: { type: [string, 'null'], maxLength: 200 }
+        eventTypes:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/WebhookEventType' }
+        environment:
+          type: [string, 'null']
+          enum: [sandbox, production, null]
+          description: Required for humans; a machine credential may omit it and always uses its own environment.
+
+    WebhookEndpointUpdate:
+      type: object
+      additionalProperties: false
+      required: [url, eventTypes, enabled]
+      properties:
+        url: { type: string, format: uri, maxLength: 2048 }
+        description: { type: [string, 'null'], maxLength: 200 }
+        eventTypes:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/WebhookEventType' }
+        enabled: { type: boolean }
+
+    WebhookEndpointConflict:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code: { type: string, enum: [WEBHOOK_ENDPOINT_URL_EXISTS, WEBHOOK_ENDPOINT_LIMIT_REACHED] }
+        message: { type: string }
+        webhookEndpointId:
+          type: string
+          format: uuid
+          description: The existing endpoint, with WEBHOOK_ENDPOINT_URL_EXISTS.
+
+    WebhookDelivery:
+      type: object
+      additionalProperties: false
+      required: [id, eventId, eventType, status, attempts, nextAttemptAt, lastAttemptAt, lastStatusCode, lastFailureCode, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        eventId: { type: string, format: uuid }
+        eventType: { type: string }
+        status: { type: string, enum: [pending, sending, succeeded, failed, cancelled] }
+        attempts: { type: integer, minimum: 0 }
+        nextAttemptAt: { type: [string, 'null'], format: date-time }
+        lastAttemptAt: { type: [string, 'null'], format: date-time }
+        lastStatusCode: { type: [integer, 'null'] }
+        lastFailureCode:
+          type: [string, 'null']
+          enum: [HTTP_STATUS, REDIRECT_NOT_FOLLOWED, TIMEOUT, CONNECTION_FAILED, DNS_FAILED, TLS_FAILED, TARGET_NOT_PUBLIC, INVALID_TARGET, null]
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    WebhookDeliveryList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/WebhookDelivery' }
+
+    WebhookTestEvent:
+      type: object
+      additionalProperties: false
+      required: [eventId]
+      properties:
+        eventId: { type: string, format: uuid }
+
+    WebhookEvent:
+      type: object
+      additionalProperties: false
+      description: |
+        The webhook body and every feed item. `data` is a safe summary and never
+        carries buyer identification, line items, the raw V-PFR response,
+        recipient addresses or secrets (docs/webhooks.md lists every field).
+      required: [id, type, timestamp, environment, data]
+      properties:
+        id: { type: string, format: uuid }
+        type:
+          type: string
+          description: A WebhookEventType, or webhook-endpoint.test on a pushed test event.
+        timestamp:
+          type: string
+          format: date-time
+          description: When the change happened, not when it was delivered.
+        environment: { type: string, enum: [sandbox, production] }
+        data:
+          oneOf:
+            - $ref: '#/components/schemas/WebhookFiscalDocumentData'
+            - $ref: '#/components/schemas/WebhookReceiptDeliveryData'
+            - $ref: '#/components/schemas/WebhookSecurityElementData'
+            - $ref: '#/components/schemas/WebhookLicenseData'
+            - $ref: '#/components/schemas/WebhookTestData'
+
+    WebhookFiscalDocumentData:
+      type: object
+      additionalProperties: false
+      required: [fiscalDocumentId, taxpayerId, businessPremiseId, status, invoiceType, transactionType, clientReference, idempotencyKey, pfrInvoiceNumber, pfrSdcTime, totalAmount, verificationUrl, failureCode]
+      properties:
+        fiscalDocumentId: { type: string, format: uuid }
+        taxpayerId: { type: string, format: uuid }
+        businessPremiseId: { type: string, format: uuid }
+        status: { type: string, enum: [FISCALIZED, OUTCOME_UNKNOWN] }
+        invoiceType: { $ref: '#/components/schemas/InvoiceType' }
+        transactionType: { $ref: '#/components/schemas/TransactionType' }
+        clientReference: { type: [string, 'null'] }
+        idempotencyKey: { type: string }
+        pfrInvoiceNumber: { type: [string, 'null'] }
+        pfrSdcTime: { type: [string, 'null'], format: date-time }
+        totalAmount: { type: [number, 'null'] }
+        verificationUrl: { type: [string, 'null'], format: uri }
+        failureCode: { type: [string, 'null'] }
+
+    WebhookReceiptDeliveryData:
+      type: object
+      additionalProperties: false
+      required: [receiptDeliveryId, fiscalDocumentId, taxpayerId, businessPremiseId, channel, status, attempts, deliveredAt, failureCode]
+      properties:
+        receiptDeliveryId: { type: string, format: uuid }
+        fiscalDocumentId: { type: string, format: uuid }
+        taxpayerId: { type: string, format: uuid }
+        businessPremiseId: { type: string, format: uuid }
+        channel: { type: string, const: EMAIL }
+        status: { type: string, enum: [DELIVERED, FAILED] }
+        attempts: { type: integer, minimum: 1 }
+        deliveredAt: { type: [string, 'null'], format: date-time }
+        failureCode: { type: [string, 'null'] }
+
+    WebhookSecurityElementData:
+      type: object
+      additionalProperties: false
+      required: [securityElementId, taxpayerId, businessPremiseId, jid, status, certificateNotAfter]
+      properties:
+        securityElementId: { type: string, format: uuid }
+        taxpayerId: { type: string, format: uuid }
+        businessPremiseId: { type: string, format: uuid }
+        jid: { type: string }
+        status: { type: string, enum: [active, suspended, retired] }
+        certificateNotAfter: { type: string, format: date-time }
+        expiryStatus:
+          type: string
+          enum: [warning, critical]
+          description: Only on security-element.expiring.
+        daysRemaining:
+          type: integer
+          minimum: 0
+          description: Whole days until the certificate expires; only on security-element.expiring.
+
+    WebhookLicenseData:
+      type: object
+      additionalProperties: false
+      required: [status, startsOn, endsOn, advanceModuleEnabled, emailModuleEnabled]
+      properties:
+        status: { type: string, enum: [active, suspended] }
+        startsOn: { type: string, format: date }
+        endsOn: { type: [string, 'null'], format: date }
+        advanceModuleEnabled: { type: boolean }
+        emailModuleEnabled: { type: boolean }
+
+    WebhookTestData:
+      type: object
+      additionalProperties: false
+      required: [webhookEndpointId]
+      properties:
+        webhookEndpointId: { type: string, format: uuid }
+
+    WebhookEventPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, hasMore]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/WebhookEvent' }
+        nextCursor:
+          type: [string, 'null']
+          description: Send as after next time; null only before the first event.
+        hasMore: { type: boolean }
+
+    WebhookSigningKey:
+      type: object
+      additionalProperties: false
+      required: [id, algorithm, publicKey]
+      properties:
+        id: { type: string }
+        algorithm: { type: string, const: ed25519 }
+        publicKey:
+          type: string
+          pattern: '^whpk_[A-Za-z0-9+/]{43}=$'
+          description: Standard Webhooks public key, whpk_ followed by the base64 raw 32-byte Ed25519 key.
+
+    WebhookSigningKeyList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/WebhookSigningKey' }
 
     ErrorCode:
       type: object

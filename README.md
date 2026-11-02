@@ -12,7 +12,7 @@ BokaPOS is an approved Serbian cloud ESIR (electronic invoicing system, *elektro
 | Path | Contents |
 |---|---|
 | `openapi/openapi.yaml` | The OpenAPI contract, the same file served at `https://api.bokapos.rs/openapi.yaml`. |
-| `examples/<language>/<group>/<operationId>.*` | One example per operation in curl, Node.js, PHP, C# and Python (36 operations). |
+| `examples/<language>/<group>/<operationId>.*` | One example per operation in curl, Node.js, PHP, C# and Python (47 operations). |
 | `postman/bokapos-api.postman_collection.json` | A Postman collection with OAuth 2.0 client credentials set up at collection level. |
 
 Everything here is generated from the source of the documentation site, so it matches the published docs. Values in the examples are illustrative sandbox values.
